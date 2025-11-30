@@ -191,7 +191,7 @@ export default defineComponent({
           // Mark the new entry as "you"
           const yourEntry = this.entries.find(e => e.id === response.entry.id)
           if (yourEntry) {
-            (yourEntry as LeaderboardEntry & { isYou: boolean }).isYou = true
+            yourEntry.isYou = true
           }
         }
       } catch (error) {

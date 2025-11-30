@@ -8,6 +8,7 @@ export interface LeaderboardEntry {
   score: number
   createdAt: string
   isChampion?: boolean
+  isYou?: boolean
 }
 
 export interface LeaderboardResponse {

@@ -135,8 +135,8 @@ export default defineComponent({
       default: () => [],
     },
     qValues: {
-      type: Array as PropType<[number, number]>,
-      default: () => [0, 0],
+      type: Array as unknown as PropType<[number, number]>,
+      default: () => [0, 0] as [number, number],
     },
     selectedAction: {
       type: Number,

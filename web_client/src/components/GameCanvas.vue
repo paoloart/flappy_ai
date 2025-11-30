@@ -139,8 +139,8 @@ export default defineComponent({
       if (!this.engine || !this.renderer) return
 
       // Initialize training loop if not already
-      if (!this.trainingLoop) {
-        this.trainingLoop = new TrainingLoop(this.engine, {
+      if (!this.trainingLoop && this.engine) {
+        this.trainingLoop = new TrainingLoop(this.engine as GameEngine, {
           inputDim: 6,
           hiddenLayers: [64, 64],
           actionDim: 2,
@@ -154,7 +154,9 @@ export default defineComponent({
       this.lastScore = 0
 
       // Start training (synchronous - pure JS neural network)
-      this.trainingLoop.start()
+      if (this.trainingLoop) {
+        this.trainingLoop.start()
+      }
 
       this.lastFrameTime = performance.now()
       this.lastMetricsTime = performance.now()
@@ -435,7 +437,7 @@ export default defineComponent({
       this.trainingLoop?.setLearningRate(lr)
     },
 
-    setRewardConfig(config: Partial<{ passPipe: number; deathPenalty: number; stepPenalty: number }>) {
+    setRewardConfig(config: Partial<{ passPipe: number; deathPenalty: number; stepPenalty: number; centerReward: number; flapCost: number; outOfBoundsCost: number }>) {
       if (this.engine) {
         this.engine.setRewardConfig(config)
       }
@@ -477,8 +479,8 @@ export default defineComponent({
       if (!this.engine || !this.renderer) return
 
       // Initialize training loop if not already (we need the agent for eval)
-      if (!this.trainingLoop) {
-        this.trainingLoop = new TrainingLoop(this.engine, {
+      if (!this.trainingLoop && this.engine) {
+        this.trainingLoop = new TrainingLoop(this.engine as GameEngine, {
           inputDim: 6,
           hiddenLayers: [64, 64],
           actionDim: 2,
@@ -522,7 +524,8 @@ export default defineComponent({
 
         // Store for visualization (exact inputs/outputs used this step)
         this.lastEvalObservation = observation
-        this.lastEvalQValues = agent.getLastQValues()
+        const qVals = agent.getLastQValues()
+        this.lastEvalQValues = [qVals[0] ?? 0, qVals[1] ?? 0]
         this.lastEvalAction = action
 
         const result = this.engine.step(action)

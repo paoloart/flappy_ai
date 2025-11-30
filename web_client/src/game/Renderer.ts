@@ -213,7 +213,6 @@ export class Renderer {
 
     const scoreStr = score.toString()
     const digitWidth = this.sprites.digits[0].width
-    const digitHeight = this.sprites.digits[0].height
     const totalWidth = scoreStr.length * digitWidth
     const startX = (GameConfig.WIDTH - totalWidth) / 2
     const startY = 30
@@ -268,10 +267,9 @@ export class Renderer {
   }
 
   /**
-   * Reset floor position (for new game)
+   * Reset animation state (for new game)
    */
   resetFloor(): void {
-    this.floorX = 0
     this.birdFrame = 0
     this.frameCount = 0
   }
