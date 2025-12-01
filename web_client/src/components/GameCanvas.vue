@@ -223,8 +223,8 @@ export default defineComponent({
         this.renderer.render(gameState as RawGameState, false)
       }
 
-      // Update UI at ~10fps in normal mode
-      if (now - this.lastMetricsTime >= 100) {
+      // Update UI at game FPS to match game steps
+      if (now - this.lastMetricsTime >= GameConfig.FRAME_TIME) {
         const metrics = this.trainingLoop.getMetrics()
         this.$emit('metrics-update', metrics)
 
@@ -545,8 +545,8 @@ export default defineComponent({
         }
       }
 
-      // Update UI at ~5fps
-      if (now - this.lastMetricsTime >= 200) {
+      // Update UI at game FPS to match game steps
+      if (now - this.lastMetricsTime >= GameConfig.FRAME_TIME) {
         this.$emit('network-update', {
           activations: [this.lastEvalObservation],
           qValues: this.lastEvalQValues,
