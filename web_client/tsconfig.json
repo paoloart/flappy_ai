@@ -17,6 +17,7 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
     "baseUrl": ".",
+    "types": ["vitest", "vite/client"],
     "paths": {
       "@/*": ["src/*"]
     }

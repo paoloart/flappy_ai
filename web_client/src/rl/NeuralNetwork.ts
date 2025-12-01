@@ -201,11 +201,17 @@ export class NeuralNetwork {
         for (let j = 0; j < layer.biases.length; j++) {
           // Weight gradient (with input clipping too)
           const weightGrad = input[i] * clippedGradPreAct[j]
-          layer.weights[i][j] -= this.learningRate * weightGrad
+
+          // Cache current weight for backprop before applying the update
+          const currentWeight = layer.weights[i][j]
+
+          // Input gradient for next layer should use the weight *before* the update
+          inputGrad[i] += currentWeight * clippedGradPreAct[j]
+
+          // Apply weight update
+          layer.weights[i][j] = currentWeight - this.learningRate * weightGrad
           // Clip weights
           layer.weights[i][j] = Math.max(-NeuralNetwork.WEIGHT_CLIP, Math.min(NeuralNetwork.WEIGHT_CLIP, layer.weights[i][j]))
-          // Input gradient for next layer
-          inputGrad[i] += layer.weights[i][j] * clippedGradPreAct[j]
         }
       }
       
@@ -319,8 +325,9 @@ export class NeuralNetwork {
    */
   toJSON(): { weights: number[][][], biases: number[][] } {
     return {
-      weights: this.getWeights(),
-      biases: this.getBiases(),
+      // Return deep copies so callers can't mutate internal state
+      weights: this.layers.map(layer => layer.weights.map(row => [...row])),
+      biases: this.layers.map(layer => [...layer.biases]),
     }
   }
 
@@ -329,8 +336,9 @@ export class NeuralNetwork {
    */
   loadJSON(data: { weights: number[][][], biases: number[][] }): void {
     for (let l = 0; l < this.layers.length; l++) {
-      this.layers[l].weights = data.weights[l]
-      this.layers[l].biases = data.biases[l]
+      // Deep copy to avoid shared references between networks
+      this.layers[l].weights = data.weights[l].map(row => [...row])
+      this.layers[l].biases = [...data.biases[l]]
     }
   }
 }

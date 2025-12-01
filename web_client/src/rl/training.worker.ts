@@ -211,8 +211,9 @@ self.onmessage = (e: MessageEvent<WorkerMessage>) => {
       }
 
       case 'setAutoDecay': {
+        const wasAutoDecay = autoDecayEnabled
         autoDecayEnabled = message.enabled
-        if (message.enabled && !autoDecayEnabled) {
+        if (message.enabled && !wasAutoDecay) {
           decayStartEpsilon = epsilon
           decayStartStep = steps
         }
