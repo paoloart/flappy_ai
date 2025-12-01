@@ -64,7 +64,7 @@ describe('NeuralNetwork', () => {
     const config = {
       learningRate: 0.1,
       layers: [
-        { inputSize: 2, outputSize: 1, activation: 'linear' },
+        { inputSize: 2, outputSize: 1, activation: 'linear' as const },
       ],
     }
 
