@@ -391,6 +391,10 @@ export class TrainingLoop {
     this.agent?.setRewardConfig(config)
   }
 
+  setTrainFreq(value: number): void {
+    this.agent?.setTrainFreq(value)
+  }
+
   /**
    * Reset training completely
    */

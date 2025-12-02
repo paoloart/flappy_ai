@@ -352,6 +352,10 @@ export class WorkerDQNAgent {
     this.worker?.postMessage({ type: 'setLRScheduler', enabled })
   }
 
+  setTrainFreq(value: number): void {
+    this.worker?.postMessage({ type: 'setTrainFreq', value })
+  }
+
   getGamma(): number {
     return this.config.gamma
   }

@@ -36,7 +36,7 @@
     <div class="controls-body">
       <!-- Epsilon Control -->
       <div class="control-group">
-        <label class="control-label">
+        <label class="control-label" :title="epsilonTooltip">
           <span>Exploration (ε)</span>
           <span class="control-value">{{ epsilon.toFixed(3) }}</span>
         </label>
@@ -66,7 +66,7 @@
 
       <!-- Epsilon Decay Rate -->
       <div class="control-group" v-if="autoDecay">
-        <label class="control-label">
+        <label class="control-label" :title="decayRateTooltip">
           <span>Decay Rate</span>
           <span class="control-value">{{ formatDecaySteps(epsilonDecaySteps) }}</span>
         </label>
@@ -85,7 +85,7 @@
 
       <!-- Learning Rate -->
       <div class="control-group">
-        <label class="control-label">
+        <label class="control-label" :title="learningRateTooltip">
           <span>Learning Rate</span>
           <span class="control-value" :class="{ 'lr-auto': lrScheduler }">{{ formatLearningRate(learningRate) }}</span>
         </label>
@@ -114,13 +114,32 @@
         </div>
       </div>
 
+      <!-- Train Frequency -->
+      <div class="control-group">
+        <label class="control-label" :title="trainFreqTooltip">
+          <span>Train Frequency</span>
+          <span class="control-value">{{ trainFreq }}</span>
+        </label>
+        <input
+          type="range"
+          class="form-range"
+          :value="trainFreq"
+          min="1"
+          max="32"
+          step="1"
+          @input="updateTrainFreq"
+          :disabled="currentMode !== 'training'"
+        />
+        <span class="hint-text">{{ trainFreqHint }}</span>
+      </div>
+
       <!-- Rewards Section -->
       <div class="control-section">
         <div class="section-header">Rewards</div>
         
         <!-- Pass Pipe Reward -->
         <div class="control-group compact">
-          <label class="control-label">
+          <label class="control-label" :title="passPipeTooltip">
             <span>Pass Pipe</span>
             <span class="control-value positive">+{{ passPipeReward.toFixed(1) }}</span>
           </label>
@@ -137,7 +156,7 @@
 
         <!-- Death Penalty -->
         <div class="control-group compact">
-          <label class="control-label">
+          <label class="control-label" :title="deathPenaltyTooltip">
             <span>Death Penalty</span>
             <span class="control-value negative">{{ deathPenalty.toFixed(1) }}</span>
           </label>
@@ -154,7 +173,7 @@
 
         <!-- Step Penalty -->
         <div class="control-group compact">
-          <label class="control-label">
+          <label class="control-label" :title="stepPenaltyTooltip">
             <span>Step Cost</span>
             <span class="control-value negative">{{ stepPenalty.toFixed(3) }}</span>
           </label>
@@ -171,7 +190,7 @@
 
         <!-- Center Reward (Dense Shaping) -->
         <div class="control-group compact">
-          <label class="control-label">
+          <label class="control-label" :title="centerBonusTooltip">
             <span>Center Bonus</span>
             <span class="control-value" :class="{ positive: centerReward > 0 }">
               {{ centerReward > 0 ? '+' : '' }}{{ centerReward.toFixed(2) }}
@@ -192,7 +211,7 @@
 
       <!-- Fast Mode Toggle -->
       <div class="control-group">
-        <label class="toggle-control">
+        <label class="toggle-control" :title="fastModeTooltip">
           <input 
             type="checkbox" 
             :checked="fastMode"
@@ -254,6 +273,10 @@ export default defineComponent({
       type: Boolean,
       default: false,
     },
+    trainFreq: {
+      type: Number,
+      default: 8,
+    },
     epsilonDecaySteps: {
       type: Number,
       default: 200000,
@@ -278,10 +301,71 @@ export default defineComponent({
     'update:fastMode',
     'update:autoDecay',
     'update:lrScheduler',
+    'update:trainFreq',
     'update:isPaused',
     'update:mode',
     'reset',
   ],
+  computed: {
+    epsilonTooltip(): string {
+      return `Exploration Rate (ε): Probability of taking a random action instead of using the learned policy.
+
+• Higher values (0.5-1.0): More exploration, tries new strategies
+• Lower values (0.05-0.2): More exploitation, uses learned policy
+• Auto-decay gradually reduces exploration over time`
+    },
+    decayRateTooltip(): string {
+      return `Epsilon Decay Rate: Number of training steps to reduce exploration from start to minimum.
+
+Lower values = faster transition to exploitation. Higher values = more exploration time.`
+    },
+    learningRateTooltip(): string {
+      return `Learning Rate: How much the neural network adjusts its weights on each training step.
+
+• Higher values: Faster learning but may be unstable
+• Lower values: Slower but more stable learning
+• Auto-schedule reduces LR when training plateaus`
+    },
+    trainFreqTooltip(): string {
+      return `Train Frequency: How often the neural network learns from experiences.
+
+• Lower values (1-4): More frequent training, slower but better learning quality
+• Medium values (8-16): Good balance between speed and quality
+• Higher values (16-32): Faster training speed, may need more episodes to learn
+
+The network updates its weights every N game steps, where N is this value.`
+    },
+    passPipeTooltip(): string {
+      return `Pass Pipe Reward: Positive reward given when the bird successfully passes through a pipe gap.
+
+Higher values encourage the agent to prioritize passing pipes.`
+    },
+    deathPenaltyTooltip(): string {
+      return `Death Penalty: Negative reward given when the bird collides with a pipe or the ground.
+
+More negative values make the agent more cautious about avoiding collisions.`
+    },
+    stepPenaltyTooltip(): string {
+      return `Step Cost: Small negative reward given every game step to encourage efficiency.
+
+Encourages the agent to complete episodes quickly rather than stalling.`
+    },
+    centerBonusTooltip(): string {
+      return `Center Bonus: Dense reward shaping that gives small rewards for moving toward the pipe gap center.
+
+Helps guide the agent during early training by rewarding progress toward the goal.`
+    },
+    fastModeTooltip(): string {
+      return `Fast Training: Disables game visualization and runs training at maximum speed using all available CPU.
+
+Useful for long training sessions. The game won't be visible but training will be much faster.`
+    },
+    trainFreqHint(): string {
+      if (this.trainFreq <= 4) return 'High quality, slower'
+      if (this.trainFreq <= 12) return 'Balanced'
+      return 'Faster, may need more episodes'
+    },
+  },
   methods: {
     updateEpsilon(event: Event) {
       const value = parseFloat((event.target as HTMLInputElement).value)
@@ -319,6 +403,10 @@ export default defineComponent({
     toggleLRScheduler(event: Event) {
       const checked = (event.target as HTMLInputElement).checked
       this.$emit('update:lrScheduler', checked)
+    },
+    updateTrainFreq(event: Event) {
+      const value = parseInt((event.target as HTMLInputElement).value)
+      this.$emit('update:trainFreq', value)
     },
     updateEpsilonDecaySteps(event: Event) {
       const value = parseInt((event.target as HTMLInputElement).value)

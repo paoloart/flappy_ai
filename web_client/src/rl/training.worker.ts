@@ -21,6 +21,7 @@ type WorkerMessage =
   | { type: 'setGamma'; value: number }
   | { type: 'setRewardConfig'; config: Partial<RewardConfig> }
   | { type: 'setLRScheduler'; enabled: boolean }
+  | { type: 'setTrainFreq'; value: number }
   | { type: 'startFast'; rewardConfig?: Partial<RewardConfig>; observationConfig?: Partial<ObservationConfig>; startingEpisode?: number; startingTotalSteps?: number }
   | { type: 'stopFast' }
   | { type: 'reset' }
@@ -59,7 +60,7 @@ let fastStepsPerSecond: number = 0
 let fastTotalSteps: number = 0
 
 // Training frequency controls
-const TRAIN_FREQ = 4          // Train every 4 experiences (balance speed/quality)
+let trainFreq = 8             // Train every N experiences (balance speed/quality)
 const FAST_BATCH_STEPS = 512  // Steps to process per fast-mode chunk
 const METRICS_WINDOW = 50
 const WARMUP_SIZE = 10000     // Minimum buffer size before training starts (same as Python)
@@ -227,7 +228,7 @@ function runFastModeBatch(): void {
     fastStepsSinceLastMetric++
 
     // Only train after warmup phase (buffer has enough samples)
-    if (!isInWarmup() && experienceCount % TRAIN_FREQ === 0 && replayBuffer.canSample(config.batchSize)) {
+    if (!isInWarmup() && experienceCount % trainFreq === 0 && replayBuffer.canSample(config.batchSize)) {
       trainOnBatch()
       updateEpsilon()
     }
@@ -374,7 +375,7 @@ self.onmessage = (e: MessageEvent<WorkerMessage>) => {
         experienceCount++
 
         // Only train after warmup phase (buffer has enough samples)
-        if (!isInWarmup() && experienceCount % TRAIN_FREQ === 0 && replayBuffer.canSample(config?.batchSize || 16)) {
+        if (!isInWarmup() && experienceCount % trainFreq === 0 && replayBuffer.canSample(config?.batchSize || 16)) {
           trainOnBatch()
           updateEpsilon()
         }
@@ -475,6 +476,12 @@ self.onmessage = (e: MessageEvent<WorkerMessage>) => {
 
       case 'stopFast': {
         stopFastMode()
+        break
+      }
+
+      case 'setTrainFreq': {
+        trainFreq = Math.max(1, Math.min(64, Math.round(message.value)))
+        console.log(`[Worker] Train frequency set to ${trainFreq}`)
         break
       }
 

@@ -432,6 +432,10 @@ export default defineComponent({
       this.trainingLoop?.setLRScheduler(enabled)
     },
 
+    setTrainFreq(value: number) {
+      this.trainingLoop?.setTrainFreq(value)
+    },
+
     setRewardConfig(config: Partial<{ passPipe: number; deathPenalty: number; stepPenalty: number; centerReward: number; flapCost: number; outOfBoundsCost: number }>) {
       this.trainingLoop?.setRewardConfig(config)
     },

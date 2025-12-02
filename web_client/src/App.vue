@@ -54,6 +54,7 @@
           :fastMode="fastMode"
           :autoDecay="autoDecay"
           :lrScheduler="lrScheduler"
+          :trainFreq="trainFreq"
           :isPaused="isPaused"
           :currentMode="mode"
           @update:epsilon="updateEpsilon"
@@ -66,6 +67,7 @@
           @update:fastMode="updateFastMode"
           @update:autoDecay="updateAutoDecay"
           @update:lrScheduler="updateLRScheduler"
+          @update:trainFreq="updateTrainFreq"
           @update:isPaused="updatePaused"
           @update:mode="changeMode"
           @reset="resetTraining"
@@ -236,6 +238,7 @@ export default defineComponent({
       fastMode: false,
       autoDecay: true,
       lrScheduler: false,
+      trainFreq: 8,
       epsilonDecaySteps: 200000,
       avgReward: 0,
       episodeReward: 0,
@@ -416,6 +419,13 @@ export default defineComponent({
       const gameCanvas = this.$refs.gameCanvas as InstanceType<typeof GameCanvas>
       if (gameCanvas) {
         gameCanvas.setEpsilonDecaySteps(value)
+      }
+    },
+    updateTrainFreq(value: number) {
+      this.trainFreq = value
+      const gameCanvas = this.$refs.gameCanvas as InstanceType<typeof GameCanvas>
+      if (gameCanvas && (gameCanvas as any).setTrainFreq) {
+        ;(gameCanvas as any).setTrainFreq(value)
       }
     },
     saveCheckpoint() {
