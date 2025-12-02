@@ -3,8 +3,10 @@
  * Falls back to main-thread training if Web Workers are not available
  */
 
+import type { RewardConfig } from '@/game'
 import { NeuralNetwork, createDQNNetwork } from './NeuralNetwork'
 import { ReplayBuffer, type Transition } from './ReplayBuffer'
+import type { TrainingMetrics } from './types'
 
 export interface DQNConfig {
   // Network architecture
@@ -66,6 +68,8 @@ export class WorkerDQNAgent {
   private lastLoss: number = 0
   private bufferSize: number = 0
   private lastQValues: number[] = [0, 0]
+  private lastWorkerMetrics: TrainingMetrics | null = null
+  private fastMetricsCallback?: (metrics: TrainingMetrics) => void
 
   // Worker ready state
   private workerReady: boolean = false
@@ -150,6 +154,13 @@ export class WorkerDQNAgent {
             this.inferenceNetwork.loadJSON(message.data)
             this.lastLoss = message.loss || 0
             // Don't overwrite steps - main thread tracks steps for epsilon decay
+            break
+
+          case 'fastMetrics':
+            this.lastLoss = message.metrics.loss
+            this.bufferSize = message.metrics.bufferSize
+            this.lastWorkerMetrics = message.metrics
+            this.fastMetricsCallback?.(message.metrics)
             break
 
           case 'error':
@@ -360,6 +371,39 @@ export class WorkerDQNAgent {
 
   getBufferSize(): number {
     return this.bufferSize
+  }
+
+  onFastMetrics(callback: (metrics: TrainingMetrics) => void): void {
+    this.fastMetricsCallback = callback
+  }
+
+  syncWeightsToWorker(): void {
+    if (this.worker && this.workerReady) {
+      const weights = this.inferenceNetwork.toJSON()
+      this.worker.postMessage({ type: 'setWeights', data: weights })
+    }
+  }
+
+  startFastTraining(): void {
+    if (this.worker && this.workerReady) {
+      this.worker.postMessage({ type: 'startFast' })
+    }
+  }
+
+  stopFastTraining(): void {
+    if (this.worker && this.workerReady) {
+      this.worker.postMessage({ type: 'stopFast' })
+    }
+  }
+
+  getWorkerMetrics(): TrainingMetrics | null {
+    return this.lastWorkerMetrics
+  }
+
+  setRewardConfig(config: Partial<RewardConfig>): void {
+    if (this.worker && this.workerReady) {
+      this.worker.postMessage({ type: 'setRewardConfig', config })
+    }
   }
 
   /**

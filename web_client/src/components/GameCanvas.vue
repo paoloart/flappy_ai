@@ -144,6 +144,10 @@ export default defineComponent({
           inputDim: 6,
           hiddenLayers: [64, 64],
           actionDim: 2,
+        }, {
+          onStep: (metrics) => {
+            this.$emit('metrics-update', metrics)
+          },
         })
       }
 
@@ -175,34 +179,21 @@ export default defineComponent({
       const elapsed = now - this.lastFrameTime
 
       if (this.fastMode) {
-        // Fast mode: run multiple steps per frame but stay under 16ms to avoid violations
-        // Each step does: inference + game physics + postMessage to worker
-        const stepsPerBatch = 25  // Reduced to keep callbacks under 16ms
-        
-        for (let i = 0; i < stepsPerBatch; i++) {
-          const stepResult = this.trainingLoop.step()
-          if (!stepResult) break
-          
-          if (stepResult.episodeEnded) {
-            this.$emit('episode-end', {
-              score: stepResult.result.info.score,
-              reward: stepResult.finalReward,
-            })
-            this.lastScore = 0
-          }
-        }
+        this.trainingLoop.setFastMode(true)
 
-        // Update metrics periodically
+        // Periodically refresh metrics from the worker-driven loop
         if (now - this.lastMetricsTime >= 500) {
           const metrics = this.trainingLoop.getMetrics()
           this.$emit('metrics-update', metrics)
           this.lastMetricsTime = now
         }
 
-        // Use requestAnimationFrame for smoother scheduling (better than setTimeout)
         this.animationId = requestAnimationFrame(() => this.runTrainingLoop())
         return
       }
+
+      // Ensure worker fast mode is disabled when returning to normal speed
+      this.trainingLoop.setFastMode(false)
 
       // Normal mode: run at game speed (30fps)
       if (elapsed >= GameConfig.FRAME_TIME) {
@@ -438,9 +429,7 @@ export default defineComponent({
     },
 
     setRewardConfig(config: Partial<{ passPipe: number; deathPenalty: number; stepPenalty: number; centerReward: number; flapCost: number; outOfBoundsCost: number }>) {
-      if (this.engine) {
-        this.engine.setRewardConfig(config)
-      }
+      this.trainingLoop?.setRewardConfig(config)
     },
 
     resetTraining() {
@@ -484,6 +473,10 @@ export default defineComponent({
           inputDim: 6,
           hiddenLayers: [64, 64],
           actionDim: 2,
+        }, {
+          onStep: (metrics) => {
+            this.$emit('metrics-update', metrics)
+          },
         })
         this.trainingLoop.start()
       }
