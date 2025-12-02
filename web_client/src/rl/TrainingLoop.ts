@@ -17,7 +17,6 @@ export interface TrainingCallbacks {
 export class TrainingLoop {
   private engine: GameEngine
   private agent: WorkerDQNAgent | null = null
-  private agentConfig: Partial<DQNConfig>
   private callbacks: TrainingCallbacks
   private createAgent: () => WorkerDQNAgent
   private initialized: boolean = false
@@ -51,7 +50,6 @@ export class TrainingLoop {
     agentFactory: () => WorkerDQNAgent = () => new WorkerDQNAgent(agentConfig)
   ) {
     this.engine = engine
-    this.agentConfig = agentConfig
     this.callbacks = callbacks
     this.createAgent = agentFactory
   }
