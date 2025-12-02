@@ -428,6 +428,10 @@ export default defineComponent({
       this.trainingLoop?.setLearningRate(lr)
     },
 
+    setLRScheduler(enabled: boolean) {
+      this.trainingLoop?.setLRScheduler(enabled)
+    },
+
     setRewardConfig(config: Partial<{ passPipe: number; deathPenalty: number; stepPenalty: number; centerReward: number; flapCost: number; outOfBoundsCost: number }>) {
       this.trainingLoop?.setRewardConfig(config)
     },

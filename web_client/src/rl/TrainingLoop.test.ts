@@ -56,6 +56,10 @@ class StubAgent {
     return 0
   }
 
+  getLearningRate(): number {
+    return 0.0005
+  }
+
   getBufferSize(): number {
     return 0
   }
@@ -140,6 +144,7 @@ describe('TrainingLoop fast-mode control', () => {
       stepsPerSecond: 2500,
       totalSteps: 1234,
       isWarmup: false,
+      learningRate: 0.0005,
     }
 
     agent.emitFastMetrics(metrics)
@@ -168,6 +173,7 @@ describe('TrainingLoop fast-mode control', () => {
       stepsPerSecond: 3000,
       totalSteps: 2000,
       isWarmup: false,
+      learningRate: 0.0005,
     })
 
     loop.setFastMode(false)

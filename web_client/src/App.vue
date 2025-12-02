@@ -53,6 +53,7 @@
           :centerReward="centerReward"
           :fastMode="fastMode"
           :autoDecay="autoDecay"
+          :lrScheduler="lrScheduler"
           :isPaused="isPaused"
           :currentMode="mode"
           @update:epsilon="updateEpsilon"
@@ -64,6 +65,7 @@
           @update:centerReward="updateCenterReward"
           @update:fastMode="updateFastMode"
           @update:autoDecay="updateAutoDecay"
+          @update:lrScheduler="updateLRScheduler"
           @update:isPaused="updatePaused"
           @update:mode="changeMode"
           @reset="resetTraining"
@@ -233,6 +235,7 @@ export default defineComponent({
       centerReward: 0.1,
       fastMode: false,
       autoDecay: true,
+      lrScheduler: false,
       epsilonDecaySteps: 200000,
       avgReward: 0,
       episodeReward: 0,
@@ -308,6 +311,7 @@ export default defineComponent({
       totalSteps: number
       avgLength: number
       isWarmup?: boolean
+      learningRate?: number
     }) {
       this.episode = metrics.episode
       this.avgReward = metrics.avgReward
@@ -323,6 +327,10 @@ export default defineComponent({
       this.totalSteps = metrics.totalSteps
       this.avgLength = metrics.avgLength
       this.isWarmup = metrics.isWarmup ?? false
+      // Update learning rate from metrics (may change with scheduler)
+      if (metrics.learningRate !== undefined) {
+        this.learningRate = metrics.learningRate
+      }
     },
     handleNetworkUpdate(viz: { activations: number[][]; qValues: number[]; selectedAction: number }) {
       this.networkActivations = viz.activations
@@ -394,6 +402,13 @@ export default defineComponent({
       const gameCanvas = this.$refs.gameCanvas as InstanceType<typeof GameCanvas>
       if (gameCanvas) {
         gameCanvas.setAutoDecay(value)
+      }
+    },
+    updateLRScheduler(value: boolean) {
+      this.lrScheduler = value
+      const gameCanvas = this.$refs.gameCanvas as InstanceType<typeof GameCanvas>
+      if (gameCanvas && (gameCanvas as any).setLRScheduler) {
+        ;(gameCanvas as any).setLRScheduler(value)
       }
     },
     updateEpsilonDecaySteps(value: number) {

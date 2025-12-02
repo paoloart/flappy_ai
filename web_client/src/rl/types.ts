@@ -10,4 +10,5 @@ export interface TrainingMetrics {
   stepsPerSecond: number
   totalSteps: number
   isWarmup: boolean  // True during warmup phase (collecting experience before training)
+  learningRate: number  // Current learning rate (may change with scheduler)
 }

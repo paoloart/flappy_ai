@@ -348,6 +348,10 @@ export class WorkerDQNAgent {
     this.worker?.postMessage({ type: 'setLearningRate', value: lr })
   }
 
+  setLRScheduler(enabled: boolean): void {
+    this.worker?.postMessage({ type: 'setLRScheduler', enabled })
+  }
+
   getGamma(): number {
     return this.config.gamma
   }

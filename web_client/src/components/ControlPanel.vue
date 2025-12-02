@@ -87,7 +87,7 @@
       <div class="control-group">
         <label class="control-label">
           <span>Learning Rate</span>
-          <span class="control-value">{{ formatLearningRate(learningRate) }}</span>
+          <span class="control-value" :class="{ 'lr-auto': lrScheduler }">{{ formatLearningRate(learningRate) }}</span>
         </label>
         <input
           type="range"
@@ -97,9 +97,21 @@
           max="0.01"
           step="0.0001"
           @input="updateLearningRate"
-          :disabled="currentMode !== 'training'"
+          :disabled="currentMode !== 'training' || lrScheduler"
         />
-        <span class="hint-text">Step size for network weight updates.</span>
+        <div class="control-hint">
+          <label class="toggle-label small">
+            <input
+              type="checkbox"
+              :checked="lrScheduler"
+              @change="toggleLRScheduler"
+              :disabled="currentMode !== 'training'"
+            />
+            <span>Auto-schedule</span>
+          </label>
+          <span class="hint-text" v-if="lrScheduler">Reduces on plateau</span>
+          <span class="hint-text" v-else>Manual</span>
+        </div>
       </div>
 
       <!-- Rewards Section -->
@@ -238,6 +250,10 @@ export default defineComponent({
       type: Boolean,
       default: true,
     },
+    lrScheduler: {
+      type: Boolean,
+      default: false,
+    },
     epsilonDecaySteps: {
       type: Number,
       default: 200000,
@@ -261,6 +277,7 @@ export default defineComponent({
     'update:centerReward',
     'update:fastMode',
     'update:autoDecay',
+    'update:lrScheduler',
     'update:isPaused',
     'update:mode',
     'reset',
@@ -298,6 +315,10 @@ export default defineComponent({
     toggleAutoDecay(event: Event) {
       const checked = (event.target as HTMLInputElement).checked
       this.$emit('update:autoDecay', checked)
+    },
+    toggleLRScheduler(event: Event) {
+      const checked = (event.target as HTMLInputElement).checked
+      this.$emit('update:lrScheduler', checked)
     },
     updateEpsilonDecaySteps(event: Event) {
       const value = parseInt((event.target as HTMLInputElement).value)
@@ -495,6 +516,17 @@ export default defineComponent({
 .control-value.speed-fast {
   color: var(--color-accent);
   background: rgba(255, 215, 0, 0.1);
+}
+
+.control-value.lr-auto {
+  color: var(--color-accent);
+  background: rgba(255, 215, 0, 0.15);
+  animation: lr-pulse 2s ease-in-out infinite;
+}
+
+@keyframes lr-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
 }
 
 .control-value.positive {

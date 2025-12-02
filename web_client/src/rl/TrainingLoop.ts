@@ -229,6 +229,7 @@ export class TrainingLoop {
         stepsPerSecond: 0,
         totalSteps: this.agent?.getSteps() ?? 0,
         isWarmup: true, // Assume warmup until worker tells us otherwise
+        learningRate: this.agent?.getLearningRate() ?? 0.0005,
       }
     }
 
@@ -257,6 +258,7 @@ export class TrainingLoop {
       stepsPerSecond: this.stepsPerSecond,
       totalSteps: this.agent?.getSteps() ?? 0,
       isWarmup: bufferSize < WARMUP_SIZE,
+      learningRate: this.agent?.getLearningRate() ?? 0.0005,
     }
   }
 
@@ -374,6 +376,10 @@ export class TrainingLoop {
 
   setLearningRate(lr: number): void {
     this.agent?.setLearningRate(lr)
+  }
+
+  setLRScheduler(enabled: boolean): void {
+    this.agent?.setLRScheduler(enabled)
   }
 
   setGamma(value: number): void {

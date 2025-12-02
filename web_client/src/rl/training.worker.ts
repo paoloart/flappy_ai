@@ -20,6 +20,7 @@ type WorkerMessage =
   | { type: 'setLearningRate'; value: number }
   | { type: 'setGamma'; value: number }
   | { type: 'setRewardConfig'; config: Partial<RewardConfig> }
+  | { type: 'setLRScheduler'; enabled: boolean }
   | { type: 'startFast'; rewardConfig?: Partial<RewardConfig>; observationConfig?: Partial<ObservationConfig>; startingEpisode?: number; startingTotalSteps?: number }
   | { type: 'stopFast' }
   | { type: 'reset' }
@@ -68,6 +69,15 @@ let epsilon: number = 1.0
 let autoDecayEnabled: boolean = true
 let decayStartEpsilon: number = 1.0
 let decayStartStep: number = 0
+
+// Learning rate scheduler state
+let lrSchedulerEnabled: boolean = false
+let currentLearningRate: number = 0.0005
+let lrSchedulerBestAvgReward: number = -Infinity
+let lrSchedulerPatienceCounter: number = 0
+const LR_SCHEDULER_PATIENCE = 50  // Episodes without improvement before reducing LR
+const LR_SCHEDULER_FACTOR = 0.5   // Multiply LR by this when reducing
+const LR_SCHEDULER_MIN = 0.00001  // Minimum learning rate
 
 /**
  * Train on a batch from replay buffer
@@ -128,6 +138,33 @@ function isInWarmup(): boolean {
   return replayBuffer ? replayBuffer.size() < WARMUP_SIZE : true
 }
 
+/**
+ * Learning rate scheduler - reduces LR when avg reward plateaus
+ */
+function updateLRScheduler(avgReward: number): void {
+  if (!lrSchedulerEnabled || !policyNetwork) return
+  
+  if (avgReward > lrSchedulerBestAvgReward) {
+    // Improvement - reset patience
+    lrSchedulerBestAvgReward = avgReward
+    lrSchedulerPatienceCounter = 0
+  } else {
+    // No improvement - increment patience
+    lrSchedulerPatienceCounter++
+    
+    if (lrSchedulerPatienceCounter >= LR_SCHEDULER_PATIENCE) {
+      // Reduce learning rate
+      const newLR = Math.max(LR_SCHEDULER_MIN, currentLearningRate * LR_SCHEDULER_FACTOR)
+      if (newLR < currentLearningRate) {
+        currentLearningRate = newLR
+        policyNetwork.setLearningRate(newLR)
+        console.log(`[Worker] LR Scheduler: Reduced learning rate to ${newLR.toExponential(2)}`)
+      }
+      lrSchedulerPatienceCounter = 0
+    }
+  }
+}
+
 function emitFastMetrics(): void {
   if (!config || !replayBuffer) return
 
@@ -153,7 +190,11 @@ function emitFastMetrics(): void {
     stepsPerSecond: fastStepsPerSecond,
     totalSteps: fastTotalSteps,
     isWarmup: isInWarmup(),
+    learningRate: currentLearningRate,
   }
+
+  // Update LR scheduler based on avg reward
+  updateLRScheduler(avgReward)
 
   self.postMessage({ type: 'fastMetrics', metrics } as WorkerResponse)
 }
@@ -285,6 +326,7 @@ self.onmessage = (e: MessageEvent<WorkerMessage>) => {
         epsilon = config.epsilonStart
         decayStartEpsilon = config.epsilonStart
         decayStartStep = 0
+        currentLearningRate = config.learningRate
         rewardConfig = DefaultRewardConfig
         observationConfig = DefaultObservationConfig
 
@@ -386,12 +428,24 @@ self.onmessage = (e: MessageEvent<WorkerMessage>) => {
       }
 
       case 'setLearningRate': {
+        currentLearningRate = message.value
         if (policyNetwork) {
           policyNetwork.setLearningRate(message.value)
         }
         if (config) {
           config.learningRate = message.value
         }
+        break
+      }
+
+      case 'setLRScheduler': {
+        lrSchedulerEnabled = message.enabled
+        if (message.enabled) {
+          // Reset scheduler state when enabling
+          lrSchedulerBestAvgReward = -Infinity
+          lrSchedulerPatienceCounter = 0
+        }
+        console.log(`[Worker] LR Scheduler: ${message.enabled ? 'enabled' : 'disabled'}`)
         break
       }
 
