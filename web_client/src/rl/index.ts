@@ -12,11 +12,8 @@ export { DQNAgent } from './DQNAgent'
 // Worker-based agent (recommended)
 export { WorkerDQNAgent, DefaultDQNConfig, type DQNConfig } from './WorkerDQNAgent'
 
-export {
-  TrainingLoop,
-  type TrainingMetrics,
-  type TrainingCallbacks,
-} from './TrainingLoop'
+export { TrainingLoop, type TrainingCallbacks } from './TrainingLoop'
+export type { TrainingMetrics } from './types'
 
 // Network visualization type (simplified - no weights)
 export interface NetworkVisualization {

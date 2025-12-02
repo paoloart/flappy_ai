@@ -3,21 +3,9 @@
  * Uses WorkerDQNAgent for off-main-thread training
  */
 
-import { GameEngine, type StepResult } from '@/game'
+import { GameEngine, type RewardConfig, type StepResult } from '@/game'
 import { WorkerDQNAgent, type DQNConfig } from './WorkerDQNAgent'
-
-export interface TrainingMetrics {
-  episode: number
-  episodeReward: number
-  episodeLength: number
-  avgReward: number
-  avgLength: number
-  epsilon: number
-  loss: number
-  bufferSize: number
-  stepsPerSecond: number
-  totalSteps: number
-}
+import type { TrainingMetrics } from './types'
 
 export interface TrainingCallbacks {
   onStep?: (metrics: TrainingMetrics, qValues: number[]) => void
@@ -31,7 +19,12 @@ export class TrainingLoop {
   private agent: WorkerDQNAgent | null = null
   private agentConfig: Partial<DQNConfig>
   private callbacks: TrainingCallbacks
+  private createAgent: () => WorkerDQNAgent
   private initialized: boolean = false
+
+  // Worker fast-mode state
+  private fastModeActive: boolean = false
+  private lastWorkerMetrics: TrainingMetrics | null = null
 
   // Training state
   private isRunning: boolean = false
@@ -54,11 +47,13 @@ export class TrainingLoop {
   constructor(
     engine: GameEngine,
     agentConfig: Partial<DQNConfig> = {},
-    callbacks: TrainingCallbacks = {}
+    callbacks: TrainingCallbacks = {},
+    agentFactory: () => WorkerDQNAgent = () => new WorkerDQNAgent(agentConfig)
   ) {
     this.engine = engine
     this.agentConfig = agentConfig
     this.callbacks = callbacks
+    this.createAgent = agentFactory
   }
 
   /**
@@ -70,7 +65,13 @@ export class TrainingLoop {
     console.log('[TrainingLoop] Initializing with Web Worker...')
 
     // Create the worker-based agent
-    this.agent = new WorkerDQNAgent(this.agentConfig)
+    this.agent = this.createAgent()
+
+    // Listen for worker-driven metrics (fast mode)
+    this.agent.onFastMetrics((metrics) => {
+      this.lastWorkerMetrics = metrics
+      this.callbacks.onStep?.(metrics, this.agent?.getLastQValues() ?? [0, 0])
+    })
 
     this.initialized = true
     console.log('[TrainingLoop] Initialized!')
@@ -99,6 +100,9 @@ export class TrainingLoop {
    */
   stop(): void {
     this.isRunning = false
+    if (this.fastModeActive) {
+      this.setFastMode(false)
+    }
     this.callbacks.onTrainingStop?.()
   }
 
@@ -108,6 +112,10 @@ export class TrainingLoop {
    */
   step(): { result: StepResult; episodeEnded: boolean; finalReward?: number; finalLength?: number } | null {
     if (!this.isRunning || !this.agent) return null
+
+    if (this.fastModeActive) {
+      return null
+    }
 
     // Agent selects action (fast - runs on main thread)
     const action = this.agent.act(this.currentState, true) as 0 | 1
@@ -200,6 +208,10 @@ export class TrainingLoop {
    * Get current training metrics
    */
   getMetrics(): TrainingMetrics {
+    if (this.fastModeActive && this.lastWorkerMetrics) {
+      return this.lastWorkerMetrics
+    }
+
     const avgReward =
       this.recentRewards.length > 0
         ? this.recentRewards.reduce((a, b) => a + b, 0) /
@@ -226,6 +238,41 @@ export class TrainingLoop {
     }
   }
 
+  setFastMode(enabled: boolean): void {
+    if (!this.agent) return
+
+    if (enabled && !this.fastModeActive) {
+      if (!this.agent.isUsingWorker()) {
+        console.warn('[TrainingLoop] Fast mode requires worker support; falling back to main thread')
+        return
+      }
+      this.agent.syncWeightsToWorker()
+      this.fastModeActive = true
+      this.agent.startFastTraining()
+    } else if (!enabled && this.fastModeActive) {
+      this.fastModeActive = false
+      this.agent.stopFastTraining()
+      // Pull the freshest weights trained in fast mode back to the main thread so
+      // subsequent on-thread inference uses the same parameters the worker just
+      // optimized.
+      if (this.agent.isUsingWorker()) {
+        this.agent.requestWeights()
+      }
+      // Reset metrics so main thread loop resumes fresh values
+      this.lastWorkerMetrics = null
+      this.resetEpisodeStats()
+      this.currentState = this.engine.reset()
+    }
+  }
+
+  private resetEpisodeStats(): void {
+    this.episodeReward = 0
+    this.episodeLength = 0
+    this.recentRewards = []
+    this.recentLengths = []
+    this.stepsPerSecond = 0
+  }
+
   /**
    * Get current game state for rendering
    */
@@ -241,9 +288,19 @@ export class TrainingLoop {
     qValues: number[]
     selectedAction: number
   } {
+    // Skip network visualization entirely during worker-driven fast mode to avoid
+    // pulling inference resources on the main thread.
+    if (this.fastModeActive) {
+      return {
+        activations: [],
+        qValues: [0, 0],
+        selectedAction: 0,
+      }
+    }
+
     // Ensure we have a valid state
-    const state = this.currentState.length > 0 
-      ? this.currentState 
+    const state = this.currentState.length > 0
+      ? this.currentState
       : [0, 0, 0, 0, 0, 0] // Default 6-dim state
     
     if (!this.agent) {
@@ -295,6 +352,11 @@ export class TrainingLoop {
 
   setGamma(value: number): void {
     this.agent?.setGamma(value)
+  }
+
+  setRewardConfig(config: Partial<RewardConfig>): void {
+    this.engine.setRewardConfig(config)
+    this.agent?.setRewardConfig(config)
   }
 
   /**
