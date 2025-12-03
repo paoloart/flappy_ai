@@ -38,7 +38,7 @@ export default defineComponent({
   name: 'GameCanvas',
   props: {
     mode: {
-      type: String as () => 'idle' | 'training' | 'eval' | 'manual',
+      type: String as () => 'idle' | 'configuring' | 'training' | 'eval' | 'manual',
       default: 'idle',
     },
     fastMode: {
@@ -49,8 +49,12 @@ export default defineComponent({
       type: Boolean,
       default: false,
     },
+    hiddenLayersConfig: {
+      type: Array as () => number[],
+      default: () => [64, 64],
+    },
   },
-  emits: ['score-update', 'episode-end', 'state-update', 'metrics-update', 'network-update', 'auto-eval-result'],
+  emits: ['score-update', 'episode-end', 'state-update', 'metrics-update', 'network-update', 'auto-eval-result', 'architecture-loaded'],
   data() {
     return {
       engine: null as GameEngine | null,
@@ -135,14 +139,14 @@ export default defineComponent({
       this.gameLoop()
     },
 
-    startTraining() {
+    startTraining(hiddenLayers: number[] = [64, 64]) {
       if (!this.engine || !this.renderer) return
 
-      // Initialize training loop if not already
+      // Initialize training loop if not already (or reinitialize if architecture changed)
       if (!this.trainingLoop && this.engine) {
         this.trainingLoop = new TrainingLoop(this.engine as GameEngine, {
           inputDim: 6,
-          hiddenLayers: [64, 64],
+          hiddenLayers,
           actionDim: 2,
         }, {
           onStep: (metrics) => {
@@ -366,8 +370,11 @@ export default defineComponent({
       if (!agent) return
 
       const payload = {
-        type: 'flappy-ai-checkpoint-v1',
+        type: 'flappy-ai-checkpoint-v2',
         createdAt: new Date().toISOString(),
+        architecture: {
+          hiddenLayers: [...this.hiddenLayersConfig],
+        },
         info: {
           epsilon: agent.getEpsilon ? agent.getEpsilon() : undefined,
           epsilonDecaySteps: this.trainingLoop.getEpsilonDecaySteps
@@ -396,10 +403,6 @@ export default defineComponent({
      * Load network weights from a JSON string (uploaded file)
      */
     loadCheckpointFromJSON(json: string) {
-      if (!this.trainingLoop) return
-      const agent = this.trainingLoop.getAgent()
-      if (!agent) return
-
       let payload: any
       try {
         payload = JSON.parse(json)
@@ -408,22 +411,66 @@ export default defineComponent({
         return
       }
 
-      if (!payload || payload.type !== 'flappy-ai-checkpoint-v1' || !payload.network) {
+      // Support both v1 and v2 checkpoint formats
+      const isV1 = payload?.type === 'flappy-ai-checkpoint-v1'
+      const isV2 = payload?.type === 'flappy-ai-checkpoint-v2'
+      if (!payload || (!isV1 && !isV2) || !payload.network) {
         console.warn('[GameCanvas] Invalid checkpoint format')
         return
       }
 
-      try {
-        agent.load(payload.network)
+      // Extract architecture (default [64, 64] for v1 checkpoints)
+      const hiddenLayers = payload.architecture?.hiddenLayers || [64, 64]
+      
+      // Store the network data and info temporarily
+      const networkData = payload.network
+      const checkpointInfo = payload.info
 
-        // Optionally restore epsilon if present
-        if (payload.info && typeof payload.info.epsilon === 'number') {
-          this.trainingLoop.setEpsilon(payload.info.epsilon)
+      // Dispose of existing training loop
+      if (this.trainingLoop) {
+        this.trainingLoop.dispose()
+        this.trainingLoop = null
+      }
+      if (this.animationId) {
+        cancelAnimationFrame(this.animationId)
+        this.animationId = null
+      }
+      this.isRunning = false
+
+      // Emit architecture-loaded so App.vue updates hiddenLayersConfig and enters configuring mode
+      this.$emit('architecture-loaded', hiddenLayers)
+
+      // Create a new training loop with the loaded architecture
+      if (this.engine) {
+        this.trainingLoop = new TrainingLoop(this.engine as GameEngine, {
+          inputDim: 6,
+          hiddenLayers,
+          actionDim: 2,
+        }, {
+          onStep: (metrics) => {
+            this.$emit('metrics-update', metrics)
+          },
+          onAutoEvalResult: (result) => {
+            this.$emit('auto-eval-result', result)
+          },
+        })
+
+        // Load the network weights
+        const agent = this.trainingLoop.getAgent()
+        if (agent) {
+          try {
+            agent.load(networkData)
+            
+            // Restore epsilon if present
+            if (checkpointInfo && typeof checkpointInfo.epsilon === 'number') {
+              this.trainingLoop.setEpsilon(checkpointInfo.epsilon)
+            }
+            
+            console.log('[GameCanvas] Checkpoint loaded with architecture:', hiddenLayers)
+          } catch (e) {
+            console.warn('[GameCanvas] Failed to load network weights', e)
+          }
         }
-
-        console.log('[GameCanvas] Checkpoint loaded')
-      } catch (e) {
-        console.warn('[GameCanvas] Failed to load checkpoint', e)
       }
     },
 
@@ -444,27 +491,23 @@ export default defineComponent({
     },
 
     resetTraining() {
+      // Stop and dispose of the training loop
+      // User will need to click "Start Training" to begin again (with potentially new architecture)
       if (this.trainingLoop) {
         // Stop fast mode if active
         if (this.fastMode) {
           this.trainingLoop.setFastMode(false)
         }
-        // Reset all training state
-        this.trainingLoop.reset()
-        this.$emit('metrics-update', this.trainingLoop.getMetrics())
-        // Restart training
-        this.trainingLoop.start()
-        // Re-enable fast mode if it was on
-        if (this.fastMode) {
-          this.trainingLoop.setFastMode(true)
-        }
-        // Restart the training loop
-        this.lastFrameTime = performance.now()
-        this.lastMetricsTime = performance.now()
-        if (!this.animationId) {
-          this.runTrainingLoop()
-        }
+        // Dispose of the training loop - it will be recreated with new config
+        this.trainingLoop.dispose()
+        this.trainingLoop = null
       }
+      // Cancel animation loop
+      if (this.animationId) {
+        cancelAnimationFrame(this.animationId)
+        this.animationId = null
+      }
+      this.isRunning = false
     },
 
     setPaused(paused: boolean) {

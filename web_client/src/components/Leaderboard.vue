@@ -31,8 +31,9 @@
             <tr>
               <th class="rank-col">#</th>
               <th class="name-col">Name</th>
-              <th class="score-col">Score</th>
-              <th class="date-col">Date</th>
+              <th class="pipes-col">Pipes</th>
+              <th class="score-col" title="Score adjusted for network efficiency">Score</th>
+              <th class="params-col">Network</th>
             </tr>
           </thead>
           <tbody>
@@ -51,11 +52,16 @@
                 <span v-if="entry.isChampion" class="crown-icon">👑</span>
                 <span v-if="entry.isYou" class="you-badge">You</span>
               </td>
+              <td class="pipes-col">
+                <span class="entry-pipes">{{ entry.pipes || entry.score }}</span>
+              </td>
               <td class="score-col">
                 <span class="entry-score">{{ entry.score }}</span>
               </td>
-              <td class="date-col">
-                <span class="entry-date">{{ formatDate(entry.createdAt) }}</span>
+              <td class="params-col">
+                <span class="entry-params" :title="entry.architecture || 'Unknown'">
+                  {{ formatParams(entry.params) }}
+                </span>
               </td>
             </tr>
           </tbody>
@@ -75,7 +81,11 @@
       <div class="submit-section" v-if="canSubmit">
         <div class="submit-header">
           <h3>Submit Your Score</h3>
-          <span class="your-score">Score: <strong>{{ pendingScore }}</strong> pipes</span>
+          <div class="your-stats">
+            <span class="your-pipes">Pipes: <strong>{{ pendingScore }}</strong></span>
+            <span class="your-score">Adjusted Score: <strong>{{ adjustedScore }}</strong></span>
+            <span class="your-network">{{ pendingArchitecture }} ({{ efficiencyText }})</span>
+          </div>
         </div>
         
         <div class="submit-form">
@@ -113,7 +123,7 @@
 
 <script lang="ts">
 import { defineComponent } from 'vue'
-import { apiClient, type LeaderboardEntry } from '@/services/apiClient'
+import { apiClient, type LeaderboardEntry, calculateAdjustedScore, getEfficiencyMultiplier } from '@/services/apiClient'
 
 export default defineComponent({
   name: 'Leaderboard',
@@ -130,6 +140,14 @@ export default defineComponent({
       type: Number,
       default: 0,
     },
+    pendingParams: {
+      type: Number,
+      default: 0,
+    },
+    pendingArchitecture: {
+      type: String,
+      default: '6→64→64→2',
+    },
   },
   emits: ['close', 'challenge', 'submit'],
   data() {
@@ -143,9 +161,21 @@ export default defineComponent({
     }
   },
   computed: {
+    adjustedScore(): number {
+      return calculateAdjustedScore(this.pendingScore, this.pendingParams)
+    },
+    efficiencyMultiplier(): number {
+      return getEfficiencyMultiplier(this.pendingParams)
+    },
+    efficiencyText(): string {
+      const mult = this.efficiencyMultiplier
+      if (mult > 1.05) return `×${mult.toFixed(2)} bonus`
+      if (mult < 0.95) return `×${mult.toFixed(2)} penalty`
+      return '×1.00'
+    },
     willBeChampion(): boolean {
-      if (!this.champion) return this.pendingScore > 0
-      return this.pendingScore > this.champion.score
+      if (!this.champion) return this.adjustedScore > 0
+      return this.adjustedScore > this.champion.score
     },
   },
   watch: {
@@ -175,7 +205,9 @@ export default defineComponent({
       try {
         const response = await apiClient.submitScore({
           name: this.networkName.trim(),
-          score: this.pendingScore,
+          pipes: this.pendingScore,
+          params: this.pendingParams,
+          architecture: this.pendingArchitecture,
         })
 
         if (response.success) {
@@ -219,6 +251,13 @@ export default defineComponent({
       if (index === 1) return 'rank-silver'
       if (index === 2) return 'rank-bronze'
       return ''
+    },
+    formatParams(params: number | undefined): string {
+      if (!params) return '—'
+      if (params >= 1000) {
+        return `${(params / 1000).toFixed(1)}K`
+      }
+      return params.toString()
     },
   },
 })
@@ -367,10 +406,11 @@ export default defineComponent({
   background: rgba(0, 217, 255, 0.1);
 }
 
-.rank-col { width: 50px; }
+.rank-col { width: 35px; }
 .name-col { }
-.score-col { width: 80px; text-align: right; }
-.date-col { width: 80px; text-align: right; }
+.pipes-col { width: 50px; text-align: right; }
+.score-col { width: 55px; text-align: right; }
+.params-col { width: 60px; text-align: right; }
 
 .rank-badge {
   display: inline-flex;
@@ -420,9 +460,21 @@ export default defineComponent({
   text-transform: uppercase;
 }
 
+.entry-pipes {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
 .entry-score {
   font-family: var(--font-display);
   color: var(--color-primary);
+}
+
+.entry-params {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  cursor: help;
 }
 
 .entry-date {
@@ -460,7 +512,7 @@ export default defineComponent({
 .submit-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   margin-bottom: var(--spacing-md);
 }
 
@@ -470,13 +522,31 @@ export default defineComponent({
   margin: 0;
 }
 
-.your-score {
-  font-size: 0.85rem;
+.your-stats {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.your-pipes,
+.your-score,
+.your-network {
+  font-size: 0.8rem;
   color: var(--color-text-muted);
+}
+
+.your-pipes strong {
+  color: var(--color-text);
 }
 
 .your-score strong {
   color: var(--color-accent);
+}
+
+.your-network {
+  font-size: 0.7rem;
+  opacity: 0.8;
 }
 
 .submit-form {

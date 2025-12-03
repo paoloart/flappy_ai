@@ -20,7 +20,16 @@
         @mouseleave="showTooltip = false"
       >
         <span class="status-label">Best Score</span>
-        <span class="status-value text-success">{{ bestScore }}</span>
+        <div class="best-score-row">
+          <span class="status-value text-success">{{ bestScore }}</span>
+          <button 
+            v-if="canSubmitToLeaderboard" 
+            class="submit-btn"
+            @click.stop="$emit('submit-score')"
+          >
+            Submit
+          </button>
+        </div>
         
         <!-- Auto-eval tooltip -->
         <div 
@@ -55,7 +64,7 @@ export default defineComponent({
   name: 'StatusBar',
   props: {
     mode: {
-      type: String as () => 'idle' | 'training' | 'eval' | 'manual',
+      type: String as () => 'idle' | 'configuring' | 'training' | 'eval' | 'manual',
       default: 'idle',
     },
     episode: {
@@ -78,7 +87,12 @@ export default defineComponent({
       type: Array as PropType<AutoEvalResult[]>,
       default: () => [],
     },
+    canSubmitToLeaderboard: {
+      type: Boolean,
+      default: false,
+    },
   },
+  emits: ['submit-score'],
   data() {
     return {
       showTooltip: false,
@@ -90,6 +104,7 @@ export default defineComponent({
     modeText(): string {
       const modes: Record<string, string> = {
         idle: 'Ready',
+        configuring: 'Configuring',
         training: 'Training',
         eval: 'Evaluating',
         manual: 'Manual',
@@ -243,6 +258,39 @@ export default defineComponent({
 .best-score-item {
   position: relative;
   cursor: help;
+}
+
+.best-score-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.submit-btn {
+  padding: 2px 6px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  background: linear-gradient(135deg, var(--color-accent), #ffaa00);
+  color: var(--color-bg-dark);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  animation: pulse-glow 1.5s ease-in-out infinite;
+  transition: transform 0.2s ease;
+}
+
+.submit-btn:hover {
+  transform: scale(1.05);
+}
+
+@keyframes pulse-glow {
+  0%, 100% { 
+    box-shadow: 0 0 4px rgba(255, 215, 0, 0.4); 
+  }
+  50% { 
+    box-shadow: 0 0 12px rgba(255, 215, 0, 0.8); 
+  }
 }
 
 .status-label {

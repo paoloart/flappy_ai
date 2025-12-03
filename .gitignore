@@ -8,6 +8,7 @@
 node_modules/
 web_client/node_modules/
 web_client/dist/
+web_client/public/leaderboard.json
 *.local
 *.tsbuildinfo
 .npm

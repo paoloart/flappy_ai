@@ -48,7 +48,7 @@
           max="1"
           step="0.01"
           @input="updateEpsilon"
-          :disabled="currentMode !== 'training'"
+          :disabled="currentMode !== 'training' && currentMode !== 'configuring'"
         />
         <div class="control-hint">
           <label class="toggle-label small">
@@ -56,7 +56,7 @@
               type="checkbox"
               :checked="autoDecay"
               @change="toggleAutoDecay"
-              :disabled="currentMode !== 'training'"
+              :disabled="currentMode !== 'training' && currentMode !== 'configuring'"
             />
             <span>Auto-decay</span>
           </label>
@@ -78,7 +78,7 @@
           max="2000000"
           step="50000"
           @input="updateEpsilonDecaySteps"
-          :disabled="currentMode !== 'training'"
+          :disabled="currentMode !== 'training' && currentMode !== 'configuring'"
         />
         <span class="hint-text">Steps to reach minimum ε</span>
       </div>
@@ -97,7 +97,7 @@
           max="0.002"
           step="0.00001"
           @input="updateLearningRate"
-          :disabled="currentMode !== 'training' || lrScheduler"
+          :disabled="(currentMode !== 'training' && currentMode !== 'configuring') || lrScheduler"
         />
         <div class="control-hint">
           <label class="toggle-label small">
@@ -105,7 +105,7 @@
               type="checkbox"
               :checked="lrScheduler"
               @change="toggleLRScheduler"
-              :disabled="currentMode !== 'training'"
+              :disabled="currentMode !== 'training' && currentMode !== 'configuring'"
             />
             <span>Auto-schedule</span>
           </label>
@@ -128,7 +128,7 @@
           max="32"
           step="1"
           @input="updateTrainFreq"
-          :disabled="currentMode !== 'training'"
+          :disabled="currentMode !== 'training' && currentMode !== 'configuring'"
         />
         <span class="hint-text">{{ trainFreqHint }}</span>
       </div>
@@ -286,7 +286,7 @@ export default defineComponent({
       default: false,
     },
     currentMode: {
-      type: String as () => 'training' | 'eval' | 'manual',
+      type: String as () => 'configuring' | 'training' | 'eval' | 'manual',
       default: 'training',
     },
   },

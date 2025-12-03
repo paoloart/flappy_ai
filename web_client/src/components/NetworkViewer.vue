@@ -142,6 +142,10 @@ export default defineComponent({
       type: Number,
       default: 0,
     },
+    hiddenLayers: {
+      type: Array as PropType<number[]>,
+      default: () => [64, 64],
+    },
   },
   data() {
     return {
@@ -150,7 +154,9 @@ export default defineComponent({
   },
   computed: {
     networkInfo(): string {
-      return '6 → 64 → 64 → 2'
+      // Show dynamic network architecture: Input → Hidden layers → Output
+      const layers = [6, ...this.hiddenLayers, 2]
+      return layers.join(' → ')
     },
     inputValues(): number[] {
       return this.activations[0] || [0, 0, 0, 0, 0, 0]

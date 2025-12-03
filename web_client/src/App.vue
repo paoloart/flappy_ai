@@ -8,6 +8,7 @@
       <div class="header-right">
         <div class="mode-indicator">
           <span v-if="mode === 'idle'" class="badge badge-idle">Ready</span>
+          <span v-else-if="mode === 'configuring'" class="badge badge-configuring">Configuring</span>
           <span
             v-else-if="mode === 'training'"
             class="badge badge-training"
@@ -40,10 +41,10 @@
 
     <main class="app-main">
       <!-- Left Panel: Controls + Neural Network -->
-      <aside class="left-panel" v-if="mode === 'training' || mode === 'eval'">
-        <!-- Training controls only shown during training -->
+      <aside class="left-panel" v-if="mode === 'configuring' || mode === 'training' || mode === 'eval'">
+        <!-- Training controls shown during configuring and training -->
         <ControlPanel
-          v-if="mode === 'training'"
+          v-if="mode === 'configuring' || mode === 'training'"
           :epsilon="epsilon"
           :learningRate="learningRate"
           :epsilonDecaySteps="epsilonDecaySteps"
@@ -100,6 +101,7 @@
           :activations="networkActivations"
           :qValues="qValues"
           :selectedAction="selectedAction"
+          :hiddenLayers="hiddenLayersConfig"
         />
         <div v-else class="fast-mode-nn-placeholder panel">
           <div class="panel-header">Neural Network</div>
@@ -116,24 +118,31 @@
           :mode="mode"
           :fastMode="fastMode"
           :isPaused="isPaused"
+          :hiddenLayersConfig="hiddenLayersConfig"
           @score-update="handleScoreUpdate"
           @episode-end="handleEpisodeEnd"
           @metrics-update="handleMetricsUpdate"
           @network-update="handleNetworkUpdate"
           @auto-eval-result="handleAutoEvalResult"
+          @architecture-loaded="handleArchitectureLoaded"
         />
         <div v-if="mode === 'idle'" class="game-overlay">
-          <div class="overlay-content">
-            <p class="instructions text-muted">Press <kbd>Space</kbd> or tap to start</p>
-            <div class="start-buttons">
-              <button class="btn btn-primary" @click="startManualPlay">
-                🎮 Play
-              </button>
-              <button class="btn btn-secondary" @click="openTrainingConfig">
-                🧠 Train AI
-              </button>
-            </div>
+          <div class="overlay-content idle-content">
+            <button class="btn btn-primary btn-hero" @click="openTrainingConfig">
+              🧠 Train AI
+            </button>
+            <button class="btn btn-text btn-small" @click="startManualPlay">
+              🎮 Play manually
+            </button>
           </div>
+        </div>
+        
+        <!-- Network Config Overlay -->
+        <div v-if="mode === 'configuring'" class="game-overlay config-overlay">
+          <NetworkConfig
+            :initialConfig="hiddenLayersConfig"
+            @start="startTrainingWithConfig"
+          />
         </div>
         
         <!-- Game Over Overlay -->
@@ -162,11 +171,17 @@
           :bestScore="bestScore"
           :stepsPerSecond="stepsPerSecond"
           :autoEvalHistory="autoEvalHistory"
+          :canSubmitToLeaderboard="canSubmitToLeaderboard"
+          @submit-score="showLeaderboard = true"
         />
 
         <div class="sidebar-panels">
+          <!-- Show leaderboard panel when idle -->
+          <LeaderboardPanel v-if="mode === 'idle'" />
+          
+          <!-- Show metrics panel when active -->
           <MetricsPanel
-            v-if="mode !== 'idle'"
+            v-else
             :epsilon="effectiveEpsilon"
             :avgReward="avgReward"
             :episodeReward="episodeReward"
@@ -196,6 +211,8 @@
       :isOpen="showLeaderboard"
       :canSubmit="canSubmitScore"
       :pendingScore="bestScore"
+      :pendingParams="networkParams"
+      :pendingArchitecture="networkArchitecture"
       @close="showLeaderboard = false"
       @challenge="handleChallengeChampion"
       @submit="handleScoreSubmitted"
@@ -210,9 +227,12 @@ import StatusBar from './components/StatusBar.vue'
 import MetricsPanel from './components/MetricsPanel.vue'
 import ControlPanel from './components/ControlPanel.vue'
 import NetworkViewer from './components/NetworkViewer.vue'
+import NetworkConfig from './components/NetworkConfig.vue'
 import Leaderboard from './components/Leaderboard.vue'
+import LeaderboardPanel from './components/LeaderboardPanel.vue'
+import { apiClient, calculateAdjustedScore } from './services/apiClient'
 
-export type GameMode = 'idle' | 'training' | 'eval' | 'manual'
+export type GameMode = 'idle' | 'configuring' | 'training' | 'eval' | 'manual'
 
 export default defineComponent({
   name: 'App',
@@ -222,7 +242,9 @@ export default defineComponent({
     MetricsPanel,
     ControlPanel,
     NetworkViewer,
+    NetworkConfig,
     Leaderboard,
+    LeaderboardPanel,
   },
   data() {
     return {
@@ -251,7 +273,7 @@ export default defineComponent({
       isWarmup: true,
       isAutoEval: false,
       autoEvalTrial: 0,
-      autoEvalTrials: 10,
+      autoEvalTrials: 100,
       lastAutoEvalResult: null as { avgScore: number; maxScore: number; minScore: number; scores: number[]; episode: number } | null,
       autoEvalHistory: [] as { avgScore: number; maxScore: number; minScore: number; scores: number[]; episode: number }[],
       networkActivations: [] as number[][],
@@ -261,6 +283,8 @@ export default defineComponent({
       showGameOver: false,
       lastGameScore: 0,
       showLeaderboard: false,
+      hiddenLayersConfig: [64, 64] as number[],
+      lowestLeaderboardScore: 0,
     }
   },
   computed: {
@@ -272,8 +296,38 @@ export default defineComponent({
     effectiveEpsilon(): number {
       return this.mode === 'eval' ? 0 : this.epsilon
     },
+    // Calculate total network parameters for leaderboard submission
+    networkParams(): number {
+      const inputDim = 6
+      const outputDim = 2
+      const layers = [inputDim, ...this.hiddenLayersConfig, outputDim]
+      let totalParams = 0
+      for (let i = 0; i < layers.length - 1; i++) {
+        // weights + biases for each layer
+        totalParams += layers[i] * layers[i + 1] + layers[i + 1]
+      }
+      return totalParams
+    },
+    // Network architecture string for leaderboard display
+    networkArchitecture(): string {
+      const layers = [6, ...this.hiddenLayersConfig, 2]
+      return layers.join('→')
+    },
+    // Check if current best score qualifies for leaderboard
+    canSubmitToLeaderboard(): boolean {
+      if (this.bestScore <= 0) return false
+      const adjustedScore = calculateAdjustedScore(this.bestScore, this.networkParams)
+      return adjustedScore > this.lowestLeaderboardScore
+    },
+  },
+  async mounted() {
+    // Load leaderboard threshold on startup
+    await this.refreshLeaderboardThreshold()
   },
   methods: {
+    async refreshLeaderboardThreshold() {
+      this.lowestLeaderboardScore = await apiClient.getLowestScore()
+    },
     startManualPlay() {
       this.mode = 'manual'
       this.showGameOver = false
@@ -283,14 +337,17 @@ export default defineComponent({
       }
     },
     openTrainingConfig() {
-      // For now, start training directly
-      // TODO: Show config modal before training
-      this.mode = 'training'
+      // Show config overlay - user must click "Start Training" to begin
+      this.mode = 'configuring'
       this.showGameOver = false
       this.isPaused = false
+    },
+    startTrainingWithConfig(hiddenLayers: number[]) {
+      this.hiddenLayersConfig = hiddenLayers
+      this.mode = 'training'
       const gameCanvas = this.$refs.gameCanvas as InstanceType<typeof GameCanvas>
       if (gameCanvas) {
-        gameCanvas.startTraining()
+        gameCanvas.startTraining(hiddenLayers)
       }
     },
     handleScoreUpdate(newScore: number) {
@@ -347,7 +404,7 @@ export default defineComponent({
       // Update auto-eval state
       this.isAutoEval = metrics.isAutoEval ?? false
       this.autoEvalTrial = metrics.autoEvalTrial ?? 0
-      this.autoEvalTrials = metrics.autoEvalTrials ?? 10
+      this.autoEvalTrials = metrics.autoEvalTrials ?? 100
     },
     handleAutoEvalResult(result: { avgScore: number; maxScore: number; minScore: number; scores: number[]; episode: number }) {
       console.log('[App] Auto-eval result:', result)
@@ -361,6 +418,12 @@ export default defineComponent({
       if (result.maxScore > this.bestScore) {
         this.bestScore = result.maxScore
       }
+    },
+    handleArchitectureLoaded(hiddenLayers: number[]) {
+      // Called when a checkpoint with architecture info is loaded
+      this.hiddenLayersConfig = hiddenLayers
+      // Go to configuring mode so user can review and start training
+      this.mode = 'configuring'
     },
     handleNetworkUpdate(viz: { activations: number[][]; qValues: number[]; selectedAction: number }) {
       this.networkActivations = viz.activations
@@ -532,6 +595,7 @@ export default defineComponent({
       if (gameCanvas) {
         gameCanvas.resetTraining()
       }
+      // Reset all state
       this.episode = 0
       this.score = 0
       this.bestScore = 0
@@ -550,6 +614,8 @@ export default defineComponent({
       this.autoEvalHistory = []
       this.isPaused = false
       this.showGameOver = false
+      // Go to configuring mode so user can adjust network config and click "Start Training"
+      this.mode = 'configuring'
     },
     restartGame() {
       this.showGameOver = false
@@ -585,11 +651,13 @@ export default defineComponent({
       this.showLeaderboard = false
       this.openTrainingConfig()
     },
-    handleScoreSubmitted(result: { entry: { name: string; score: number }; isNewChampion: boolean }) {
+    async handleScoreSubmitted(result: { entry: { name: string; score: number }; isNewChampion: boolean }) {
       if (result.isNewChampion) {
         // Show celebration message
         console.log('🎉 New champion:', result.entry.name, 'with score', result.entry.score)
       }
+      // Refresh the leaderboard threshold
+      await this.refreshLeaderboardThreshold()
     },
   },
 })
@@ -654,6 +722,11 @@ export default defineComponent({
 
 .badge-training {
   background: linear-gradient(135deg, var(--color-primary), #0099cc);
+  color: var(--color-bg-dark);
+}
+
+.badge-configuring {
+  background: linear-gradient(135deg, #ff9f43, #ff6b35);
   color: var(--color-bg-dark);
 }
 
@@ -735,12 +808,53 @@ export default defineComponent({
   z-index: 10;
 }
 
+.config-overlay {
+  overflow-y: auto;
+  padding: var(--spacing-md);
+}
+
 .game-over-overlay {
   background: rgba(15, 15, 35, 0.9);
 }
 
 .overlay-content {
   text-align: center;
+}
+
+.idle-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-lg);
+}
+
+.btn-hero {
+  padding: var(--spacing-lg) var(--spacing-xl);
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 4px 20px rgba(0, 200, 255, 0.3);
+  transition: all 0.3s ease;
+}
+
+.btn-hero:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 30px rgba(0, 200, 255, 0.5);
+}
+
+.btn-text {
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+  padding: var(--spacing-sm) var(--spacing-md);
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.btn-text:hover {
+  color: var(--color-text);
 }
 
 .game-over-title {
