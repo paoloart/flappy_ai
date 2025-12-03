@@ -284,6 +284,7 @@ export default defineComponent({
       showLeaderboard: false,
       hiddenLayersConfig: [64, 64] as number[],
       lowestLeaderboardScore: 0,
+      lastSubmittedBestScore: 0,  // Track the last submitted best score to prevent duplicate submissions
     }
   },
   computed: {
@@ -312,9 +313,11 @@ export default defineComponent({
       const layers = [6, ...this.hiddenLayersConfig, 2]
       return layers.join('→')
     },
-    // Check if current best score qualifies for leaderboard
+    // Check if current best score qualifies for leaderboard and hasn't been submitted yet
     canSubmitToLeaderboard(): boolean {
       if (this.bestScore <= 0) return false
+      // Don't allow resubmitting the same best score
+      if (this.bestScore === this.lastSubmittedBestScore) return false
       const adjustedScore = calculateAdjustedScore(this.bestScore, this.networkParams)
       return adjustedScore > this.lowestLeaderboardScore
     },
@@ -615,6 +618,7 @@ export default defineComponent({
       this.autoEvalHistory = []
       this.isPaused = false
       this.showGameOver = false
+      this.lastSubmittedBestScore = 0  // Reset to allow new submissions
       // Go to configuring mode so user can adjust network config and click "Start Training"
       this.mode = 'configuring'
     },
@@ -649,6 +653,8 @@ export default defineComponent({
       }
     },
     async handleScoreSubmitted(result: { entry: { name: string; score: number }; isNewChampion: boolean }) {
+      // Mark this score as submitted to prevent duplicate submissions
+      this.lastSubmittedBestScore = this.bestScore
       if (result.isNewChampion) {
         // Show celebration message
         console.log('🎉 New champion:', result.entry.name, 'with score', result.entry.score)
