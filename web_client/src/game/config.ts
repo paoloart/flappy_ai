@@ -65,8 +65,8 @@ export interface RewardConfig {
   passPipe: number
   deathPenalty: number
   flapCost: number
-  outOfBoundsCost: number
   centerReward: number
+  // Note: outOfBoundsCost is hardcoded internally (0.1 penalty for y < 0)
 }
 
 export const DefaultRewardConfig: RewardConfig = {
@@ -74,7 +74,6 @@ export const DefaultRewardConfig: RewardConfig = {
   passPipe: 1.0,
   deathPenalty: -1.0,
   flapCost: 0.003,         // Match Python default
-  outOfBoundsCost: 0.005,  // Penalty for going above top
   centerReward: 0.01,      // Shaping: small reward for moving toward gap center
 }
 

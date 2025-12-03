@@ -109,8 +109,12 @@ export class Renderer {
 
   /**
    * Render a frame of the game
+   * @param state - Current game state
+   * @param showMessage - Whether to show welcome message
+   * @param reward - Optional per-frame reward value to display during training
+   * @param cumulativeReward - Optional cumulative episode reward
    */
-  render(state: RawGameState, showMessage: boolean = false): void {
+  render(state: RawGameState, showMessage: boolean = false, reward?: number, cumulativeReward?: number): void {
     if (!this.sprites) return
 
     this.frameCount++
@@ -132,6 +136,11 @@ export class Renderer {
 
     // Draw score
     this.drawScore(state.score)
+
+    // Draw reward indicator during training (over the ground)
+    if (reward !== undefined) {
+      this.drawReward(reward, cumulativeReward)
+    }
 
     // Draw message overlay if in welcome state
     if (showMessage) {
@@ -247,6 +256,77 @@ export class Renderer {
     this.ctx.fillRect(0, 0, GameConfig.WIDTH, GameConfig.HEIGHT)
 
     this.ctx.drawImage(this.sprites.gameOver, goX, goY)
+  }
+
+  /**
+   * Draw reward indicator in bottom right (over ground texture)
+   * Styled to match the retro pixel art aesthetic
+   */
+  private drawReward(reward: number, cumulativeReward?: number): void {
+    const ctx = this.ctx
+    
+    // Position: bottom right, above the floor
+    const x = GameConfig.WIDTH - 10
+    const y = GameConfig.HEIGHT - 20
+    
+    // Format reward with sign and fixed decimals
+    const sign = reward >= 0 ? '+' : ''
+    const rewardText = `${sign}${reward.toFixed(3)}`
+    
+    // Color based on reward value
+    let color: string
+    if (reward > 0.5) {
+      color = '#00ff00' // Bright green for big positive
+    } else if (reward > 0) {
+      color = '#88ff88' // Light green for small positive
+    } else if (reward > -0.1) {
+      color = '#ffff00' // Yellow for small negative (normal step)
+    } else if (reward > -0.5) {
+      color = '#ff8800' // Orange for medium negative
+    } else {
+      color = '#ff0000' // Red for big negative (death)
+    }
+    
+    // Draw with pixel-art style (bigger font)
+    ctx.save()
+    ctx.font = 'bold 16px monospace'
+    ctx.textAlign = 'right'
+    ctx.textBaseline = 'bottom'
+    
+    // Shadow for readability over ground texture
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'
+    ctx.fillText(rewardText, x + 1, y + 1)
+    
+    // Main text
+    ctx.fillStyle = color
+    ctx.fillText(rewardText, x, y)
+    
+    // Label above - "REWARD"
+    ctx.font = 'bold 10px monospace'
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)'
+    ctx.fillText('REWARD', x, y - 18)
+    
+    // Draw cumulative reward below (smaller)
+    if (cumulativeReward !== undefined) {
+      const cumSign = cumulativeReward >= 0 ? '+' : ''
+      const cumText = `Σ ${cumSign}${cumulativeReward.toFixed(2)}`
+      
+      // Color for cumulative
+      let cumColor: string
+      if (cumulativeReward > 0) {
+        cumColor = '#88ff88'
+      } else {
+        cumColor = '#ff8888'
+      }
+      
+      ctx.font = 'bold 11px monospace'
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'
+      ctx.fillText(cumText, x + 1, y + 14)
+      ctx.fillStyle = cumColor
+      ctx.fillText(cumText, x, y + 13)
+    }
+    
+    ctx.restore()
   }
 
   /**

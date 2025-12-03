@@ -76,6 +76,8 @@ export default defineComponent({
       lastEvalObservation: [] as number[],
       lastEvalQValues: [0, 0] as [number, number],
       lastEvalAction: 0 as 0 | 1,
+      // For reward display during training
+      lastReward: 0 as number,
     }
   },
   computed: {
@@ -213,6 +215,11 @@ export default defineComponent({
 
         const stepResult = this.trainingLoop.step()
         
+        // Capture the reward for display
+        if (stepResult?.result) {
+          this.lastReward = stepResult.result.reward
+        }
+        
         if (stepResult?.episodeEnded) {
           this.$emit('episode-end', {
             score: stepResult.result.info.score,
@@ -221,9 +228,10 @@ export default defineComponent({
           this.lastScore = 0
         }
 
-        // Render every frame in normal mode
+        // Render every frame in normal mode (with reward indicator)
         const gameState = this.engine.getState()
-        this.renderer.render(gameState as RawGameState, false)
+        const cumulativeReward = this.trainingLoop.getMetrics().episodeReward
+        this.renderer.render(gameState as RawGameState, false, this.lastReward, cumulativeReward)
       }
 
       // Update UI at game FPS to match game steps
@@ -487,7 +495,7 @@ export default defineComponent({
       this.trainingLoop?.setTrainFreq(value)
     },
 
-    setRewardConfig(config: Partial<{ passPipe: number; deathPenalty: number; stepPenalty: number; centerReward: number; flapCost: number; outOfBoundsCost: number }>) {
+    setRewardConfig(config: Partial<{ passPipe: number; deathPenalty: number; stepPenalty: number; centerReward: number; flapCost: number }>) {
       this.trainingLoop?.setRewardConfig(config)
     },
 

@@ -35,7 +35,6 @@ export class GameEngine {
   private rewardConfig: RewardConfig
   private observationConfig: ObservationConfig
   private prevScore: number = 0
-  private prevAbsDy1: number | null = null
   private episode: number = 0
   private totalSteps: number = 0
 
@@ -54,7 +53,6 @@ export class GameEngine {
   reset(): number[] {
     this.state = createInitialState()
     this.prevScore = 0
-    this.prevAbsDy1 = null
     this.episode++
 
     // Give the bird an initial upward velocity (like Python version)
@@ -319,34 +317,30 @@ export class GameEngine {
     if (this.state.done) {
       reward = this.rewardConfig.deathPenalty
     } else {
-      // Out of bounds penalty (going above screen)
-      if (this.state.birdY < 0 && this.rewardConfig.outOfBoundsCost > 0) {
-        reward -= this.rewardConfig.outOfBoundsCost
+      // Out of bounds penalty (going above screen) - hardcoded like Python
+      // This teaches the agent to stay within the visible viewport
+      if (this.state.birdY < 0) {
+        reward -= 0.1 // Fixed penalty for being above viewport
       }
     }
 
-    // Dense reward shaping: reward for moving toward gap center
-    // Normalized by viewport height so reward is in reasonable range
+    // Dense reward shaping: reward for being close to gap center
+    // At center: reward = centerReward, at max distance: reward = 0
     if (!this.state.done && this.rewardConfig.centerReward > 0) {
       const pipe1 = this.state.pipes[0]
       if (pipe1) {
-        // Check if pipe changed (score increased = new pipe passed)
-        if (scoreDelta > 0) {
-          // Reset tracking for new pipe to avoid reward spikes
-          this.prevAbsDy1 = null
-        }
-
-        // Normalize distance to [0, 1] range
-        const dy1 = Math.abs(pipe1.gapCenterY - this.state.birdY) / GameConfig.VIEWPORT_HEIGHT
-        if (this.prevAbsDy1 !== null) {
-          // Reward change is small: e.g., moving 5px closer = 5/400 = 0.0125
-          // With centerReward=0.5: 0.5 * 0.0125 = 0.00625 per frame
-          reward += this.rewardConfig.centerReward * (this.prevAbsDy1 - dy1)
-        }
-        this.prevAbsDy1 = dy1
-      } else {
-        // No pipe available, reset tracking
-        this.prevAbsDy1 = null
+        // Calculate distance from bird to gap center
+        const distance = Math.abs(pipe1.gapCenterY - this.state.birdY)
+        
+        // Max distance is half the viewport (bird can be above or below center)
+        const maxDistance = GameConfig.VIEWPORT_HEIGHT / 2
+        
+        // Proximity: 1.0 at center, 0.0 at max distance
+        const proximity = Math.max(0, 1 - (distance / maxDistance))
+        
+        // Reward scales linearly with proximity
+        // centerReward=0.5 at center → 0.5 per frame, at edge → 0 per frame
+        reward += this.rewardConfig.centerReward * proximity
       }
     }
 
