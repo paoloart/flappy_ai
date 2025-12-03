@@ -1,9 +1,12 @@
 /**
- * API Client for leaderboard - uses local storage and JSON file
+ * API Client for leaderboard - uses server API for shared leaderboard
  */
 
 // Reference network size for efficiency calculation (6→64→64→2)
 const REFERENCE_PARAMS = 8706
+
+// API base URL - use relative path in production (Caddy proxies /api to backend)
+const API_BASE = import.meta.env.VITE_API_URL || '/api'
 
 export interface LeaderboardEntry {
   id: string
@@ -53,94 +56,78 @@ export interface SubmitScoreResponse {
   isNewChampion: boolean
 }
 
-// Local storage key for leaderboard data
-const LEADERBOARD_STORAGE_KEY = 'flappy-ai-leaderboard'
-
 class ApiClient {
+  private baseUrl: string
+
+  constructor(baseUrl: string = API_BASE) {
+    this.baseUrl = baseUrl
+  }
+
   /**
-   * Get leaderboard entries from local storage
+   * Get leaderboard entries from server
    */
   async getLeaderboard(limit: number = 10): Promise<LeaderboardResponse> {
     try {
-      const storedData = localStorage.getItem(LEADERBOARD_STORAGE_KEY)
-      if (storedData) {
-        const data = JSON.parse(storedData) as LeaderboardResponse
-        return this.processLeaderboard(data, limit)
+      const response = await fetch(`${this.baseUrl}/leaderboard?limit=${limit}`)
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
       }
+      return await response.json()
     } catch (error) {
-      console.warn('Failed to load leaderboard:', error)
-    }
-
-    // Return empty leaderboard if nothing stored yet
-    return { entries: [], champion: undefined }
-  }
-
-  /**
-   * Process leaderboard: sort by score, limit entries, mark champion
-   */
-  private processLeaderboard(data: LeaderboardResponse, limit: number): LeaderboardResponse {
-    // Sort by score descending
-    const sortedEntries = [...data.entries].sort((a, b) => b.score - a.score)
-    
-    // Limit entries
-    const limitedEntries = sortedEntries.slice(0, limit)
-    
-    // Mark champion
-    limitedEntries.forEach((entry, index) => {
-      entry.isChampion = index === 0
-    })
-
-    const champion = limitedEntries.length > 0 ? limitedEntries[0] : undefined
-
-    return {
-      entries: limitedEntries,
-      champion,
+      console.warn('Failed to fetch leaderboard from server:', error)
+      // Return empty leaderboard on error
+      return { entries: [], champion: undefined }
     }
   }
 
   /**
-   * Submit a new score to the leaderboard (saves to localStorage)
+   * Submit a new score to the leaderboard (saves to server)
    */
   async submitScore(request: SubmitScoreRequest): Promise<SubmitScoreResponse> {
-    // Load current leaderboard
-    const current = await this.getLeaderboard(100) // Get all entries
-    
     // Calculate efficiency-adjusted score
     const adjustedScore = calculateAdjustedScore(request.pipes, request.params)
-    
-    // Create new entry
-    const newEntry: LeaderboardEntry = {
-      id: `entry-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      name: request.name,
-      score: adjustedScore,
-      pipes: request.pipes,
-      params: request.params,
-      architecture: request.architecture,
-      createdAt: new Date().toISOString(),
-      isYou: true,
-    }
 
-    // Check if this is a new champion
-    const currentChampion = current.champion
-    const isNewChampion = !currentChampion || adjustedScore > currentChampion.score
+    try {
+      const response = await fetch(`${this.baseUrl}/leaderboard`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: request.name,
+          pipes: request.pipes,
+          params: request.params,
+          architecture: request.architecture,
+          score: adjustedScore,
+        }),
+      })
 
-    // Add new entry to the list
-    const updatedEntries = [...current.entries, newEntry]
-    
-    // Sort by adjusted score
-    updatedEntries.sort((a, b) => b.score - a.score)
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
 
-    // Save back to localStorage
-    const updatedData: LeaderboardResponse = {
-      entries: updatedEntries,
-      champion: isNewChampion ? newEntry : currentChampion,
-    }
-    localStorage.setItem(LEADERBOARD_STORAGE_KEY, JSON.stringify(updatedData))
-
-    return {
-      success: true,
-      entry: newEntry,
-      isNewChampion,
+      const result = await response.json()
+      // Mark the entry as "you" on the client side
+      if (result.entry) {
+        result.entry.isYou = true
+      }
+      return result
+    } catch (error) {
+      console.error('Failed to submit score:', error)
+      // Return a failed response
+      return {
+        success: false,
+        entry: {
+          id: '',
+          name: request.name,
+          score: adjustedScore,
+          pipes: request.pipes,
+          params: request.params,
+          architecture: request.architecture,
+          createdAt: new Date().toISOString(),
+        },
+        isNewChampion: false,
+      }
     }
   }
 
@@ -148,16 +135,17 @@ class ApiClient {
    * Get the lowest score on the leaderboard (or 0 if empty/less than 10 entries)
    */
   async getLowestScore(): Promise<number> {
-    const data = await this.getLeaderboard(10)
-    if (data.entries.length < 10) return 0  // Always qualify if less than 10 entries
-    return data.entries[data.entries.length - 1]?.score || 0
-  }
-
-  /**
-   * Clear the leaderboard (for testing)
-   */
-  clearLeaderboard(): void {
-    localStorage.removeItem(LEADERBOARD_STORAGE_KEY)
+    try {
+      const response = await fetch(`${this.baseUrl}/leaderboard/lowest`)
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      const data = await response.json()
+      return data.lowestScore || 0
+    } catch (error) {
+      console.warn('Failed to get lowest score:', error)
+      return 0  // Allow submission on error
+    }
   }
 }
 

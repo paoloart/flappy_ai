@@ -109,7 +109,7 @@ echo "✓ Build complete (${BUILD_SIZE})"
 cd "$APP_DIR"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 4) Create Caddyfile (static file server with SPA support)
+# 4) Create Caddyfile (static file server with API proxy)
 # ─────────────────────────────────────────────────────────────────────────────
 echo "📝 Creating Caddyfile..."
 cat > Caddyfile <<EOF
@@ -117,16 +117,23 @@ ${DOMAIN}, www.${DOMAIN} {
     # Compression
     encode zstd gzip
     
-    # Serve static files from /srv
-    root * /srv
-    file_server
+    # Proxy API requests to the backend
+    handle /api/* {
+        reverse_proxy leaderboard-api:3001
+    }
     
-    # SPA fallback: serve index.html for client-side routes
-    try_files {path} /index.html
+    # Serve static files from /srv
+    handle {
+        root * /srv
+        file_server
+        
+        # SPA fallback: serve index.html for client-side routes
+        try_files {path} /index.html
+    }
     
     # Cache static assets aggressively (they have content hashes)
     @static {
-        path *.js *.css *.png *.jpg *.jpeg *.gif *.ico *.svg *.woff *.woff2 *.webp
+        path *.js *.css *.png *.jpg *.jpeg *.gif *.ico *.svg *.woff *.woff2 *.webp *.ogg *.wav
     }
     header @static Cache-Control "public, max-age=31536000, immutable"
     
@@ -139,12 +146,20 @@ ${DOMAIN}, www.${DOMAIN} {
 EOF
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 5) Create docker-compose.yml (Caddy only - no backend needed!)
+# 5) Build the leaderboard API Docker image
+# ─────────────────────────────────────────────────────────────────────────────
+echo "🔨 Building leaderboard API..."
+cd "$APP_DIR/web_client/server"
+docker build -t flappy-leaderboard-api .
+cd "$APP_DIR"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6) Create docker-compose.yml (Caddy + Leaderboard API)
 # ─────────────────────────────────────────────────────────────────────────────
 echo "📝 Creating docker-compose.yml..."
 cat > docker-compose.yml <<EOF
-# Flappy AI - Static Web Client
-# All AI/RL runs in the browser - no backend needed!
+# Flappy AI - Web Client + Shared Leaderboard
+# AI/RL runs in browser, leaderboard is shared via API
 
 services:
   caddy:
@@ -159,14 +174,42 @@ services:
       - ./web_client/dist:/srv:ro
       - caddy_data:/data
       - caddy_config:/config
+    depends_on:
+      - leaderboard-api
+
+  leaderboard-api:
+    image: flappy-leaderboard-api
+    container_name: flappy-leaderboard
+    restart: unless-stopped
+    environment:
+      - PORT=3001
+      - DATA_DIR=/app/data
+    volumes:
+      - leaderboard_data:/app/data
 
 volumes:
   caddy_data:
   caddy_config:
+  leaderboard_data:
 EOF
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 6) Stop old FlapPyBird containers if running
+# 7) Backup existing leaderboard data (if any)
+# ─────────────────────────────────────────────────────────────────────────────
+BACKUP_DIR="$APP_DIR/backups"
+mkdir -p "$BACKUP_DIR"
+
+# Check if leaderboard container exists and has data
+if docker ps -a | grep -q flappy-leaderboard; then
+  echo "💾 Backing up leaderboard data..."
+  BACKUP_FILE="$BACKUP_DIR/leaderboard-$(date +%Y%m%d-%H%M%S).json"
+  docker cp flappy-leaderboard:/app/data/leaderboard.json "$BACKUP_FILE" 2>/dev/null && \
+    echo "   ✓ Backup saved to: $BACKUP_FILE" || \
+    echo "   ⚠️ No existing leaderboard data to backup"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 8) Stop old FlapPyBird containers if running
 # ─────────────────────────────────────────────────────────────────────────────
 if [ -f "$APP_DIR/FlapPyBird/docker-compose.yml" ]; then
   echo "🛑 Stopping old FlapPyBird containers..."
@@ -175,35 +218,45 @@ if [ -f "$APP_DIR/FlapPyBird/docker-compose.yml" ]; then
   cd "$APP_DIR"
 fi
 
-# Also stop any existing flappy-web container
-docker stop flappy-web 2>/dev/null || true
-docker rm flappy-web 2>/dev/null || true
+# Stop containers but DON'T remove volumes (data persists!)
+echo "🔄 Restarting containers (leaderboard data will be preserved)..."
+docker compose down 2>/dev/null || true
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 7) Deploy!
+# 9) Deploy!
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""
-echo "🚀 Starting Caddy..."
+echo "🚀 Starting services..."
 docker compose up -d
 
 # Wait a moment for container to start
 sleep 2
 
 # Check if running
-if docker ps | grep -q flappy-web; then
+if docker ps | grep -q flappy-web && docker ps | grep -q flappy-leaderboard; then
   echo ""
   echo "═══════════════════════════════════════════════════════════"
   echo "  ✅ Deployment successful!"
   echo "═══════════════════════════════════════════════════════════"
   echo ""
-  echo "  🌐 Site:  https://${DOMAIN}"
-  echo "  📋 Logs:  docker logs -f flappy-web"
-  echo "  🔄 Reload: docker compose restart"
+  echo "  🌐 Site:       https://${DOMAIN}"
+  echo "  🏆 API:        https://${DOMAIN}/api/leaderboard"
+  echo ""
+  echo "  📋 Logs:       docker logs -f flappy-web"
+  echo "                 docker logs -f flappy-leaderboard"
+  echo "  🔄 Restart:    docker compose restart"
+  echo ""
+  echo "  💾 Data:       Leaderboard data persists in Docker volume"
+  echo "                 Backups saved to: $BACKUP_DIR/"
+  echo ""
+  echo "  ⚠️  To DELETE leaderboard data (manual only):"
+  echo "      docker volume rm flappy_ai_leaderboard_data"
   echo ""
 else
   echo ""
-  echo "❌ Container failed to start. Check logs:"
+  echo "❌ Containers failed to start. Check logs:"
   echo "   docker logs flappy-web"
+  echo "   docker logs flappy-leaderboard"
   exit 1
 fi
 

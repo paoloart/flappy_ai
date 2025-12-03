@@ -9,6 +9,8 @@ node_modules/
 web_client/node_modules/
 web_client/dist/
 web_client/public/leaderboard.json
+web_client/server/node_modules/
+web_client/server/data/
 *.local
 *.tsbuildinfo
 .npm
@@ -110,6 +112,11 @@ logs/
 tmp/
 temp/
 .cache/
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Deployment Backups
+# ─────────────────────────────────────────────────────────────────────────────
+backups/
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Testing
