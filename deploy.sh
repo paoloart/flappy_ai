@@ -229,11 +229,14 @@ echo ""
 echo "🚀 Starting services..."
 docker compose up -d
 
-# Wait a moment for container to start
-sleep 2
+# Wait for containers to start
+sleep 3
 
-# Check if running
-if docker ps | grep -q flappy-web && docker ps | grep -q flappy-leaderboard; then
+# Check if containers are running
+WEB_RUNNING=$(docker inspect -f '{{.State.Running}}' flappy-web 2>/dev/null || echo "false")
+API_RUNNING=$(docker inspect -f '{{.State.Running}}' flappy-leaderboard 2>/dev/null || echo "false")
+
+if [ "$WEB_RUNNING" = "true" ] && [ "$API_RUNNING" = "true" ]; then
   echo ""
   echo "═══════════════════════════════════════════════════════════"
   echo "  ✅ Deployment successful!"
@@ -257,6 +260,9 @@ else
   echo "❌ Containers failed to start. Check logs:"
   echo "   docker logs flappy-web"
   echo "   docker logs flappy-leaderboard"
+  echo ""
+  echo "   Web running: $WEB_RUNNING"
+  echo "   API running: $API_RUNNING"
   exit 1
 fi
 
