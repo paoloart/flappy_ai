@@ -68,12 +68,11 @@ let steps: number = 0  // Training step count
 let lastLoss: number = 0
 let experienceCount: number = 0
 
-// Epsilon state - NOW BASED ON ENV STEPS (fastTotalSteps)
+// Epsilon state - LINEAR decay based on TRAINING STEPS (same as CPU worker)
 let epsilon: number = 1.0
 let autoDecayEnabled: boolean = true
 let decayStartEpsilon: number = 1.0
-let decayStartEnvStep: number = 0  // legacy (steps-based) - non più usato per il decay principale
-let decayStartEpisode: number = 0  // nuovo: usiamo gli episodi per il decadimento di epsilon
+let decayStartTrainStep: number = 0  // Training step when decay started
 
 // Multi-bird state
 let engines: GameEngine[] = []
@@ -119,13 +118,6 @@ const WEIGHT_SYNC_INTERVAL = 500  // Sync weights to main thread every N train s
 const TARGET_UPDATE_ENV_STEPS = 10000  // Update target network every N env steps
 const MAX_TRAIN_BATCHES_PER_LOOP = 512  // Hard safety cap to avoid starving UI
 const TRAIN_TIME_BUDGET_MS = 25  // Max time per loop spent on backprop
-// Numero "caratteristico" di episodi per il decadimento di epsilon.
-// Usiamo un decadimento ESPONENZIALE verso epsilonEnd:
-// - nei primi episodi epsilon cala velocemente,
-// - poi la discesa rallenta e si avvicina asintoticamente a epsilonEnd.
-// Dopo circa EPSILON_DECAY_EPISODES episodi avremo consumato ~95% del delta.
-const EPSILON_DECAY_EPISODES = 5000
-const EPSILON_DECAY_TARGET_FRAC = 0.05  // 5% del gap epsilonStart-epsilonEnd dopo N episodi
 
 // ============================================================================
 // Helper Functions
@@ -300,23 +292,15 @@ function finishAutoEval(): void {
   }
 }
 
+/**
+ * Update epsilon decay - LINEAR decay based on TRAINING STEPS (same as CPU worker)
+ * This is the original fork behavior: epsilon decays linearly over epsilonDecaySteps training steps.
+ */
 function updateEpsilon(): void {
   if (!config || !autoDecayEnabled) return
-  // Decadimento ESPONENZIALE basato sugli EPISODI, indipendente dal numero di bird.
-  // Forma: epsilon = epsilonEnd + (epsilonStart - epsilonEnd) * exp(-k * episodes)
-  // con k scelto in modo che dopo EPSILON_DECAY_EPISODES episodi resti solo
-  // EPSILON_DECAY_TARGET_FRAC del gap iniziale.
-  const totalEpisodesSinceStart = fastEpisode - decayStartEpisode
-  if (totalEpisodesSinceStart <= 0) {
-    epsilon = decayStartEpsilon
-    return
-  }
-
-  // Normalizza per il numero di bird: ragioniamo in termini di "episodi per env".
-  // Così con 100 o 1000 bird epsilon non crolla troppo in fretta in tempo reale.
-  const effectiveEpisodesPerEnv = totalEpisodesSinceStart / Math.max(1, numBirds)
-  const k = -Math.log(EPSILON_DECAY_TARGET_FRAC) / EPSILON_DECAY_EPISODES
-  const frac = 1 - Math.exp(-k * effectiveEpisodesPerEnv)  // 0 -> ~1
+  
+  const stepsSinceDecayStart = trainCallCount - decayStartTrainStep
+  const frac = Math.min(1.0, stepsSinceDecayStart / config.epsilonDecaySteps)
   epsilon = decayStartEpsilon + frac * (config.epsilonEnd - decayStartEpsilon)
 }
 
@@ -702,7 +686,7 @@ self.onmessage = async (e: MessageEvent<GPUWorkerMessage>) => {
         steps = 0
         epsilon = config.epsilonStart
         decayStartEpsilon = config.epsilonStart
-        decayStartEnvStep = 0
+        decayStartTrainStep = 0
         lastTargetUpdateEnvStep = 0
         
         // Auto-set optimal batch size based on numBirds
@@ -826,8 +810,7 @@ self.onmessage = async (e: MessageEvent<GPUWorkerMessage>) => {
         autoDecayEnabled = message.enabled
         if (message.enabled && !wasAutoDecay) {
           decayStartEpsilon = epsilon
-          // Ripartiamo a contare episodi da qui per il decay
-          decayStartEpisode = fastEpisode
+          decayStartTrainStep = trainCallCount
         }
         break
       }
@@ -893,8 +876,7 @@ self.onmessage = async (e: MessageEvent<GPUWorkerMessage>) => {
         experienceCount = 0
         epsilon = config?.epsilonStart || 1.0
         decayStartEpsilon = config?.epsilonStart || 1.0
-        decayStartEnvStep = 0
-        decayStartEpisode = 0
+        decayStartTrainStep = 0
         lastTargetUpdateEnvStep = 0
         lastLoss = 0
         trainCallCount = 0
